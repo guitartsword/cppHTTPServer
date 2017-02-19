@@ -11,6 +11,7 @@
 
 #include <vector>
 #include <sstream>
+#include <fstream>
 
 using namespace std;
 
@@ -27,17 +28,24 @@ int sockfd, newsockfd, portno;
 socklen_t clilen;
 char buffer[1024];
 int n;
-const char HEADERS[] = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: ";
-const char OUTPUT[] = "<html><head><title>Example</title></head><body<h1>SOY CRACK</h1><p>Funciona!!!</p></body></html>";
-int OUTPUT_LENGTH = strlen(OUTPUT);
+
+//GENERIC RESPONSE FORMAT
+const char HEADERS_OK[] = "HTTP/1.1 200 OK\r\nContent-Type: ";
+const char HEADERS_LENGTH[] = "Content-Length: ";
 const char HEADERS_END[]= "\r\n\r\n";
+const char PATH[] = "webServerFiles";
 
 //Funciones hilo
 void* entradaMensaje(void*);
 void* salidaMensaje(void*);
 
-//Tokenize vector
+//Funciones personalizadas
 vector<string> getAllTokens(string);
+
+//HTTP functions
+int fileStreamSize(fstream&);
+void sendFile(fstream&);
+void sendHeaders(const char* ,fstream&);
 
 int main(int argc, char *argv[])
 { 
@@ -80,14 +88,11 @@ int main(int argc, char *argv[])
     //Creación del hilo
     pthread_create( &entrada, NULL, entradaMensaje, (void*) NULL );
     pthread_create( &salida, NULL, salidaMensaje, (void*) NULL );	
-    while (1);/*{
-         char x;
-         x = cin.get();
-         if(x == 's' || x == 'S')
-            break;
-    }	
+    while (1);
+    /*
     close(newsockfd);
-    close(sockfd);*/
+    close(sockfd);
+    */
     return 0; 
 }
 
@@ -96,18 +101,38 @@ void* entradaMensaje(void*) {
 	    bzero(buffer,1024);
 	    n = read(newsockfd,buffer,1023);
 	    if (n < 0) error("ERROR reading from socket");
-        //Parse request
+        //PRINTS REQUEST FROM BROWSER
+        cout << "MENSAJE RECIBIDO:\n" << buffer << endl;
 
-        //vector<string> tokens = getTokens();
-        cout << "Mensaje entrada: " << buffer << endl;
-        stringstream response;
-        response << HEADERS << OUTPUT_LENGTH << HEADERS_END << OUTPUT;
-        cout << "MENSAJE A RESPONDER: " << endl;
-        cout << response.str().c_str() << endl;
-        cout << response.str().length() << endl;
-        n= write(newsockfd, response.str().c_str(),response.str().length());
-        if (n < 0)
-            error("ERROR writing to socket");
+        //Parse request
+        vector<string> tokens = getAllTokens(buffer);
+
+        //INITIALIZE FILE
+        stringstream ss;
+        if(tokens.size() >= 3){
+            fstream file;
+            
+            if(tokens[0] == "GET"){
+                ss << PATH << tokens[1];
+                file.open (ss.str().c_str(), fstream::in);
+            }else if(tokens[0] == "POST"){
+
+            }else if(tokens[0] == "DELETE"){
+
+            }else if(tokens[0] == "PUT"){
+
+            }
+            if(file.is_open()){
+                sendHeaders(tokens[1].c_str(),file);
+                sendFile(file);
+                cout << "response sent";
+            }else{
+                cout << "404 NOT FOUND COULDN'T OPEN FILE" << endl;
+                //sendErrorHeaders(file);
+                //sendFile(file);
+            }
+            
+        }        
 	}
 }
 
@@ -135,4 +160,58 @@ vector<string> getAllTokens(string toTokenize){
         }
     }
     return v;
+}
+
+int fileStreamSize(fstream& file){
+    if(file){
+        file.seekg(0,file.end);
+        int fileSize = file.tellg();
+        file.seekg(0, file.beg);
+        cout << fileSize << endl;
+        return fileSize;
+
+    }
+    return -1;
+}
+
+void sendHeaders(const char* contentType, fstream& file){
+    stringstream response;
+    int OUTPUT_LENGTH = fileStreamSize(file);
+    response << HEADERS_OK;
+    
+    //FORMATO MIME
+    if(strstr(contentType,".htm")){
+        response << "text/html";
+    }else if (strstr(contentType,".css")){
+        response << "text/css";
+    }else if (strstr(contentType,".ico")){
+        response << "image/x-icon";
+    }else if(strstr(contentType,".pdf")){
+        response << "application/pdf";
+    }else{
+        response << "text/plain";
+    }
+    if(OUTPUT_LENGTH <= 0){
+        OUTPUT_LENGTH = 9;
+    }
+    response << "\r\n" << HEADERS_LENGTH << OUTPUT_LENGTH << HEADERS_END;
+    n= write(newsockfd, response.str().c_str(),response.str().length());
+    if (n < 0)
+        error("ERROR writing HEADERS to socket");
+}
+void sendFile(fstream& file){
+    char* bufferData;
+    int bufferSize = fileStreamSize(file);
+    if(bufferSize > 0){    
+        bufferData = new char[bufferSize];
+        file.read(bufferData, bufferSize);   
+    }else{
+        bufferSize=9;
+        bufferData = new char[bufferSize];
+        bufferData = strcpy(bufferData,"FILE NOT FOUND");
+    }
+    n = write(newsockfd, bufferData, bufferSize);
+    delete[] bufferData;
+    if(n < 0)
+        error("ERROR writing FILE to socket");
 }
