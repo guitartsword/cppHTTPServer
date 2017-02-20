@@ -30,6 +30,7 @@ char buffer[1024];
 int n;
 
 //GENERIC RESPONSE FORMAT
+const char HEADERS_ERROR[] = "HTTP/1.1 404 OK\r\nContent-Type: ";
 const char HEADERS_OK[] = "HTTP/1.1 200 OK\r\nContent-Type: ";
 const char HEADERS_LENGTH[] = "Content-Length: ";
 const char HEADERS_END[]= "\r\n\r\n";
@@ -122,16 +123,27 @@ void* entradaMensaje(void*) {
             }else if(tokens[0] == "PUT"){
 
             }
+
             if(file.is_open()){
                 sendHeaders(tokens[1].c_str(),file);
                 sendFile(file);
                 cout << "response sent";
             }else{
                 cout << "404 NOT FOUND COULDN'T OPEN FILE" << endl;
-                //sendErrorHeaders(file);
-                //sendFile(file);
+                
+                if(tokens[1] == "/"){
+                    ss << PATH << "index.html";
+                    file.open(ss.str().c_str(),fstream::in);
+                    sendHeaders(ss.str().c_str(),file);
+                    sendFile(file);
+                }else{
+                    ss << PATH << "/error.html";
+                    file.open(ss.str().c_str(), fstream::in);
+                    sendHeaders("/error.html",file);
+                    sendFile(file);
+                }
             }
-            
+            file.close();
         }        
 	}
 }
@@ -177,7 +189,14 @@ int fileStreamSize(fstream& file){
 void sendHeaders(const char* contentType, fstream& file){
     stringstream response;
     int OUTPUT_LENGTH = fileStreamSize(file);
-    response << HEADERS_OK;
+    if(OUTPUT_LENGTH <= 0){
+        response << HEADERS_ERROR;
+        fstream errorFile ("webServerFiles/error.html",fstream::in);
+        OUTPUT_LENGTH = fileStreamSize(errorFile);
+        errorFile.close();
+    }else{
+        response << HEADERS_OK;
+    }
     
     //FORMATO MIME
     if(strstr(contentType,".htm")){
@@ -188,12 +207,12 @@ void sendHeaders(const char* contentType, fstream& file){
         response << "image/x-icon";
     }else if(strstr(contentType,".pdf")){
         response << "application/pdf";
+    }else if(strstr(contentType,".js")){
+        response << "application/js";
     }else{
         response << "text/plain";
     }
-    if(OUTPUT_LENGTH <= 0){
-        OUTPUT_LENGTH = 9;
-    }
+    
     response << "\r\n" << HEADERS_LENGTH << OUTPUT_LENGTH << HEADERS_END;
     n= write(newsockfd, response.str().c_str(),response.str().length());
     if (n < 0)
@@ -202,13 +221,18 @@ void sendHeaders(const char* contentType, fstream& file){
 void sendFile(fstream& file){
     char* bufferData;
     int bufferSize = fileStreamSize(file);
-    if(bufferSize > 0){    
+    if(bufferSize > 0){
         bufferData = new char[bufferSize];
         file.read(bufferData, bufferSize);   
     }else{
-        bufferSize=9;
+        //SEND ERROR HTML FILE
+        stringstream ss;
+        ss << PATH << "/error.html";
+        file.close();
+        file.open(ss.str().c_str(), fstream::in);
+        bufferSize = fileStreamSize(file);
         bufferData = new char[bufferSize];
-        bufferData = strcpy(bufferData,"FILE NOT FOUND");
+        file.read(bufferData, bufferSize);
     }
     n = write(newsockfd, bufferData, bufferSize);
     delete[] bufferData;
