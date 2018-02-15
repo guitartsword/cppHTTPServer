@@ -1,6 +1,6 @@
-all: server
+all: compile
 
-server: server.cpp run
+compile: server.cpp run
 	g++ -pthread server.cpp -o server.out
 run: server.out
 	./server.out
